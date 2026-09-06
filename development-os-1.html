@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Development OS</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Development OS" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0B0C10" />
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Development%20OS%22%2C%22short_name%22%3A%22DevOS%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230B0C10%22%2C%22theme_color%22%3A%22%230B0C10%22%7D" />
+<style>
+  html, body { margin: 0; padding: 0; background: #0B0C10; }
+  * { -webkit-tap-highlight-color: transparent; }
+  ::-webkit-scrollbar { display: none; }
+  #debug-banner { display: none; position: fixed; top: 0; left: 0; right: 0; background: #E2694E; color: #fff; font-family: monospace; font-size: 12px; padding: 10px; z-index: 99999; white-space: pre-wrap; max-height: 60vh; overflow: auto; }
+</style>
+<script>
+  function showError(msg) {
+    document.addEventListener('DOMContentLoaded', function(){});
+    var b = document.getElementById('debug-banner') || (function(){
+      var d = document.createElement('div'); d.id='debug-banner';
+      document.body ? document.body.prepend(d) : document.documentElement.appendChild(d);
+      return d;
+    })();
+    b.style.display = 'block';
+    b.textContent = (b.textContent ? b.textContent + '\n\n' : '') + msg;
+  }
+  window.onerror = function (msg, src, line, col, err) {
+    showError('Error: ' + msg + '\n(' + src + ':' + line + ':' + col + ')');
+  };
+  window.addEventListener('unhandledrejection', function (e) {
+    showError('Promise rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+</script>
+<script src="https://cdn.tailwindcss.com" onerror="showError('Failed to load Tailwind from CDN (cdn.tailwindcss.com) — check internet connection or an extension/blocker.')"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="showError('Failed to load React from CDN (unpkg.com) — check internet connection or an extension/blocker.')"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="showError('Failed to load ReactDOM from CDN (unpkg.com) — check internet connection or an extension/blocker.')"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="showError('Failed to load Babel from CDN (unpkg.com) — check internet connection or an extension/blocker.')"></script>
+</head>
+<body>
+<div id="debug-banner"></div>
+<div id="root"></div>
+<script>
+  setTimeout(function () {
+    var root = document.getElementById('root');
+    if (root && root.children.length === 0) {
+      showError('Nothing rendered after 4 seconds. This usually means React, Tailwind, or Babel failed to load from the CDN (check your internet connection), or a script above was blocked.');
+    }
+  }, 4000);
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef } = React;
+
+/* ---------------------------------------------------------------- */
+/* LOCAL STORAGE SHIM (mimics the Claude-artifact storage API)       */
+/* ---------------------------------------------------------------- */
+
+const storage = {
+  async get(key) {
+    const v = localStorage.getItem(key);
+    if (v === null) throw new Error("Key not found: " + key);
+    return { key, value: v, shared: false };
+  },
+  async set(key, value) {
+    localStorage.setItem(key, value);
+    return { key, value, shared: false };
+  },
+  async delete(key) {
+    localStorage.removeItem(key);
+    return { key, deleted: true, shared: false };
+  },
+};
+
+/* ---------------------------------------------------------------- */
+/* TOKENS                                                             */
+/* ---------------------------------------------------------------- */
+
+const C = {
+  bg: "#0B0C10", bgSoft: "#0F1115", surface: "#15171D", surfaceRaised: "#1B1E25",
+  hairline: "#262A33", hairlineSoft: "#1D2029",
+  textPrimary: "#EDEEF0", textSecondary: "#999DA8", textTertiary: "#5C606C",
+  signal: "#54D6C7", signalDim: "rgba(84,214,199,0.16)",
+  violet: "#8C7EF2", violetDim: "rgba(140,126,242,0.16)",
+  amber: "#EAA956", danger: "#E2694E",
+};
+const SANS = "'Segoe UI', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif";
+const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+/* ---------------------------------------------------------------- */
+/* ICONS — hand-drawn minimal set, no external icon library          */
+/* ---------------------------------------------------------------- */
+
+function Icon({ name, size = 16, color = "currentColor" }) {
+  const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
+  const paths = {
+    flame: <path d="M12 3c2 3 5 6 5 10a5 5 0 1 1-10 0c0-1.8.8-3.3 1.8-4.6-.1 1.1.4 1.9 1.2 1.9.9 0 1.4-.9 1.1-1.9-.4-1.6 0-3.6 0.9-5.4z" />,
+    trendingUp: <React.Fragment><polyline points="3 17 9 11 13 15 21 6" /><polyline points="14 6 21 6 21 13" /></React.Fragment>,
+    trendingDown: <React.Fragment><polyline points="3 7 9 13 13 9 21 18" /><polyline points="14 18 21 18 21 11" /></React.Fragment>,
+    target: <React.Fragment><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></React.Fragment>,
+    mic: <React.Fragment><rect x="9" y="2" width="6" height="11" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></React.Fragment>,
+    briefcase: <React.Fragment><rect x="2" y="7" width="20" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></React.Fragment>,
+    book: <React.Fragment><path d="M4 4h7a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z" /><path d="M20 4h-7a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h7z" /></React.Fragment>,
+    brain: <React.Fragment><path d="M9 3a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5v1a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" /><path d="M15 3a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5v1a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" /></React.Fragment>,
+    dumbbell: <React.Fragment><rect x="2" y="9" width="4" height="6" rx="1" /><rect x="18" y="9" width="4" height="6" rx="1" /><line x1="6" y1="12" x2="18" y2="12" /></React.Fragment>,
+    message: <React.Fragment><rect x="3" y="4" width="18" height="13" rx="2" /><polyline points="7 21 9 17 12 17" /></React.Fragment>,
+    users: <React.Fragment><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15 20a5 5 0 0 1 7-4.5" /></React.Fragment>,
+    lightbulb: <React.Fragment><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z" /></React.Fragment>,
+    sparkles: <path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5z" />,
+    shield: <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" />,
+    barChart: <React.Fragment><line x1="6" y1="20" x2="6" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="18" y1="20" x2="18" y2="14" /></React.Fragment>,
+    home: <React.Fragment><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></React.Fragment>,
+    grid: <React.Fragment><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></React.Fragment>,
+    user: <React.Fragment><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></React.Fragment>,
+    compass: <React.Fragment><circle cx="12" cy="12" r="9" /><polygon points="14.5 9.5 12 12 9.5 14.5 12 12" /></React.Fragment>,
+    refresh: <React.Fragment><path d="M20 11a8 8 0 1 0-2.3 5.7" /><polyline points="20 4 20 11 13 11" /></React.Fragment>,
+    check: <polyline points="20 6 9 17 4 12" />,
+    circle: <circle cx="12" cy="12" r="9" />,
+    x: <React.Fragment><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></React.Fragment>,
+    plus: <React.Fragment><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></React.Fragment>,
+    play: <polygon points="6 4 20 12 6 20" />,
+    square: <rect x="5" y="5" width="14" height="14" rx="2" />,
+    chevronRight: <polyline points="9 6 15 12 9 18" />,
+  };
+  return <svg {...p}>{paths[name] || paths.circle}</svg>;
+}
+
+/* ---------------------------------------------------------------- */
+/* MINI CHARTS — hand-rolled SVG, no chart library                   */
+/* ---------------------------------------------------------------- */
+
+function MiniLineChart({ data, color, height = 160 }) {
+  const w = 300, h = 100;
+  const pts = data.map((d, idx) => {
+    const x = data.length > 1 ? (idx / (data.length - 1)) * w : w / 2;
+    const y = h - (Math.max(0, Math.min(100, d.v)) / 100) * h;
+    return `${x},${y}`;
+  }).join(" ");
+  const last = data[data.length - 1];
+  const lastX = w;
+  const lastY = h - (Math.max(0, Math.min(100, last.v)) / 100) * h;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height }} preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" />
+      <circle cx={lastX} cy={lastY} r="3.5" fill={color} />
+    </svg>
+  );
+}
+
+function MiniRadarChart({ data, size = 280 }) {
+  const n = data.length;
+  const cx = size / 2, cy = size / 2, r = size * 0.32;
+  const angle = (i) => (i / n) * Math.PI * 2 - Math.PI / 2;
+  const pointFor = (value, i) => {
+    const rad = r * (Math.max(0, Math.min(100, value)) / 100);
+    const a = angle(i);
+    return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad];
+  };
+  const currentPts = data.map((d, i) => pointFor(d.current, i).join(",")).join(" ");
+  const comparePts = data.map((d, i) => pointFor(d.compare, i).join(",")).join(" ");
+  const rings = [0.25, 0.5, 0.75, 1];
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: size }}>
+      {rings.map((f) => <circle key={f} cx={cx} cy={cy} r={r * f} fill="none" stroke={C.hairline} strokeWidth="1" />)}
+      {data.map((d, i) => { const [x, y] = pointFor(100, i); return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={C.hairline} strokeWidth="1" />; })}
+      <polygon points={comparePts} fill={C.textTertiary} fillOpacity="0.12" stroke={C.textTertiary} strokeWidth="1.5" />
+      <polygon points={currentPts} fill={C.signal} fillOpacity="0.28" stroke={C.signal} strokeWidth="1.5" />
+      {data.map((d, i) => { const [x, y] = pointFor(112, i); return <text key={i} x={x} y={y} fontSize="9" fill={C.textSecondary} textAnchor="middle">{d.dimension}</text>; })}
+    </svg>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* DIMENSION CATALOG                                                  */
+/* ---------------------------------------------------------------- */
+
+const DIM_DEFS = [
+  { key: "physical", label: "Physical", icon: "dumbbell" },
+  { key: "mental", label: "Mental & emotional", icon: "brain" },
+  { key: "communication", label: "Communication", icon: "message" },
+  { key: "confidence", label: "Confidence & presence", icon: "shield" },
+  { key: "knowledge", label: "Knowledge & awareness", icon: "book" },
+  { key: "business", label: "Business intelligence", icon: "briefcase" },
+  { key: "discipline", label: "Discipline & execution", icon: "target" },
+  { key: "social", label: "Social intelligence", icon: "users" },
+  { key: "analytical", label: "Analytical & problem solving", icon: "barChart" },
+  { key: "creativity", label: "Creativity & growth", icon: "lightbulb" },
+];
+const DIM_LABEL = Object.fromEntries(DIM_DEFS.map((d) => [d.key, d.label]));
+
+const ACTIVITY_CATALOG = {
+  physical: ["30-minute workout", "10,000-step walk", "Mobility & stretch session", "Sleep-consistency check"],
+  mental: ["Evening reflection", "Breathing / stress-reset exercise", "Name today's emotions honestly"],
+  communication: ["3-minute impromptu speaking", "Write a short structured explanation", "Active-listening exercise"],
+  confidence: ["One uncomfortable but constructive challenge", "Practice assertive phrasing", "Stand and present for 60 seconds"],
+  knowledge: ["Today's 5 things + quiz", "Read one long-form article", "Explain a concept from memory"],
+  business: ["Business case walkthrough", "Analyze a company's latest results", "Marketing / positioning exercise"],
+  discipline: ["Complete your planned routine", "Time-block tomorrow", "Follow through on a deferred task"],
+  social: ["Reach out to one person meaningfully", "Practice a conflict-handling scenario", "Have a networking conversation"],
+  analytical: ["Root-cause analysis exercise", "Data-interpretation practice", "Decision-tree a real choice"],
+  creativity: ["10-idea generation sprint", "Reframe a stuck problem", "Try an unfamiliar approach to something"],
+};
+
+const CASE_SCENARIOS = [
+  "A subscription app is losing 8% of paying users every month. Walk through how you'd diagnose and address it.",
+  "A mid-size retailer wants to enter a new country next year. What would you evaluate before committing budget?",
+  "Your team's main product has flat revenue for two quarters despite growing signups. What's your read on this?",
+];
+const SPEAKING_PROMPTS = [
+  "Is social media making people less productive?",
+  "Should companies allow employees to work from anywhere permanently?",
+  "What's a belief you've changed your mind about recently?",
+];
+const KNOWLEDGE_ITEMS = [
+  { cat: "India", headline: "RBI holds repo rate steady amid inflation watch", blurb: "The central bank kept rates unchanged, citing balanced growth and price signals." },
+  { cat: "World", headline: "Regional trade bloc proposes new tariff framework", blurb: "Member states are negotiating phased tariff reductions over three years." },
+  { cat: "Business", headline: "Mid-cap retailer reports narrower losses", blurb: "Cost discipline and inventory turnover improved quarter over quarter." },
+  { cat: "Economy", headline: "Manufacturing PMI edges above expansion line", blurb: "New orders rose modestly while input costs stayed roughly flat." },
+  { cat: "Technology", headline: "On-device AI models gain ground in mobile chips", blurb: "Chipmakers are prioritizing efficient local inference over cloud round-trips." },
+];
+const QUIZ = [
+  { q: "What did the RBI do with the repo rate?", options: ["Raised it", "Held it steady", "Cut it sharply"], answer: 1, type: "Recall" },
+  { q: "What is the likely intent behind phased tariff reductions?", options: ["Protect all industries permanently", "Ease adjustment for affected sectors", "Increase short-term prices"], answer: 1, type: "Understanding" },
+  { q: "If PMI stays above the expansion line next month too, what's the reasonable read?", options: ["Manufacturing is contracting", "Manufacturing is modestly expanding", "Data is meaningless"], answer: 1, type: "Application" },
+];
+
+/* ---------------------------------------------------------------- */
+/* STORAGE KEY + DEFAULT SHAPE                                       */
+/* ---------------------------------------------------------------- */
+
+const STORAGE_KEY = "pdos-data-v1";
+
+function defaultData() {
+  return {
+    profile: { name: "You", startDate: new Date().toISOString(), targetIndex: 85 },
+    log: [],
+    customActivities: [],
+  };
+}
+function genId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+function isoDaysAgo(n) { return new Date(Date.now() - n * 86400000).toISOString(); }
+
+/* ---------------------------------------------------------------- */
+/* SCORING — evidence based, diminishing returns, gentle decay         */
+/* ---------------------------------------------------------------- */
+
+function scoreAsOf(dimKey, cutoffISO, log) {
+  const cutoff = new Date(cutoffISO).getTime();
+  let weighted = 0;
+  for (const e of log) {
+    if (!e.dims || !e.dims.includes(dimKey)) continue;
+    const t = new Date(e.ts).getTime();
+    if (t > cutoff) continue;
+    const ageDays = (cutoff - t) / 86400000;
+    const halfLife = 45;
+    weighted += Math.pow(0.5, ageDays / halfLife);
+  }
+  if (weighted <= 0) return 50;
+  const score = 50 + 8 * Math.log2(1 + weighted);
+  return Math.max(1, Math.min(99, Math.round(score)));
+}
+function dayScoreFor(dayKey, log) {
+  const entries = log.filter((e) => e.ts.slice(0, 10) === dayKey);
+  const distinctDims = new Set(entries.flatMap((e) => e.dims || []));
+  return Math.min(100, entries.length * 12 + distinctDims.size * 8);
+}
+function computeStreaks(log) {
+  const days = [...new Set(log.map((e) => e.ts.slice(0, 10)))].sort();
+  if (days.length === 0) return { current: 0, longest: 0 };
+  let longest = 1, run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const diff = (new Date(days[i]) - new Date(days[i - 1])) / 86400000;
+    run = diff === 1 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+  }
+  const daySet = new Set(days);
+  let current = 0;
+  let cursor = new Date();
+  if (!daySet.has(todayKey())) cursor = new Date(Date.now() - 86400000);
+  while (daySet.has(cursor.toISOString().slice(0, 10))) {
+    current++;
+    cursor = new Date(cursor.getTime() - 86400000);
+  }
+  return { current, longest };
+}
+function dateSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function getSuggestions(dimScores) {
+  const sorted = [...DIM_DEFS].sort((a, b) => dimScores[a.key] - dimScores[b.key]);
+  const seed = dateSeed(todayKey());
+  return sorted.slice(0, 5).map((d, i) => {
+    const catalog = ACTIVITY_CATALOG[d.key];
+    const idx = (seed + i * 7) % catalog.length;
+    return { label: catalog[idx], dims: [d.key], dimLabel: d.label };
+  });
+}
+function loggedToday(log, label) {
+  const tk = todayKey();
+  return log.some((e) => e.label === label && e.ts.slice(0, 10) === tk);
+}
+
+/* ---------------------------------------------------------------- */
+/* SMALL PRIMITIVES                                                    */
+/* ---------------------------------------------------------------- */
+
+function Card({ children, style, className = "" }) {
+  return <div className={`rounded-2xl p-4 ${className}`} style={{ background: C.surface, border: `1px solid ${C.hairline}`, ...style }}>{children}</div>;
+}
+function SectionHeading({ title, sub }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-base font-semibold" style={{ color: C.textPrimary, letterSpacing: "-0.01em" }}>{title}</h2>
+      {sub && <p className="text-xs mt-1" style={{ color: C.textSecondary }}>{sub}</p>}
+    </div>
+  );
+}
+function TrendTag({ pct }) {
+  const up = pct >= 0;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs" style={{ color: up ? C.signal : C.danger, fontFamily: MONO }}>
+      <Icon name={up ? "trendingUp" : "trendingDown"} size={12} />{up ? "+" : ""}{pct}
+    </span>
+  );
+}
+function Pill({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} className="text-xs rounded-full px-3 py-1.5 transition"
+      style={{ background: active ? C.signalDim : "transparent", color: active ? C.signal : C.textSecondary, border: `1px solid ${active ? C.signal : C.hairline}` }}>
+      {children}
+    </button>
+  );
+}
+function SyncBadge({ saveError, onRetry }) {
+  if (!saveError) return <span className="text-xs" style={{ color: C.textTertiary, fontFamily: MONO }}>Saved on this device</span>;
+  return <button onClick={onRetry} className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(226,105,78,0.14)", color: C.danger }}>Couldn't save — tap to retry</button>;
+}
+
+/* ---------------------------------------------------------------- */
+/* AVATAR GLYPH                                                        */
+/* ---------------------------------------------------------------- */
+
+function AvatarGlyph({ pct, dims, size = 260, version = 1 }) {
+  const h = size, w = size * 0.78;
+  const fillHeight = (h - 30) * (Math.max(0, Math.min(100, pct)) / 100);
+  const cx = w / 2, cy = h * 0.5, radius = w * 0.46;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={size} style={{ maxWidth: w, display: "block", margin: "0 auto" }}>
+      <defs>
+        <linearGradient id="fillGrad" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stopColor={C.violet} />
+          <stop offset="100%" stopColor={C.signal} />
+        </linearGradient>
+        <clipPath id="devClip"><rect x="0" y={h - 20 - fillHeight} width={w} height={fillHeight + 20} /></clipPath>
+      </defs>
+      <g>
+        <circle cx={w / 2} cy={h * 0.18} r={w * 0.16} fill="none" stroke={C.hairline} strokeWidth="1.5" />
+        <path d={`M ${w * 0.28} ${h * 0.42} Q ${w / 2} ${h * 0.34} ${w * 0.72} ${h * 0.42} L ${w * 0.78} ${h - 22} Q ${w / 2} ${h - 4} ${w * 0.22} ${h - 22} Z`} fill="none" stroke={C.hairline} strokeWidth="1.5" />
+      </g>
+      <g clipPath="url(#devClip)">
+        <circle cx={w / 2} cy={h * 0.18} r={w * 0.16} fill="url(#fillGrad)" opacity="0.9" />
+        <path d={`M ${w * 0.28} ${h * 0.42} Q ${w / 2} ${h * 0.34} ${w * 0.72} ${h * 0.42} L ${w * 0.78} ${h - 22} Q ${w / 2} ${h - 4} ${w * 0.22} ${h - 22} Z`} fill="url(#fillGrad)" opacity="0.9" />
+      </g>
+      {dims.map((d, i) => {
+        const angle = (i / dims.length) * Math.PI * 2 - Math.PI / 2;
+        const r = radius + 14;
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * (r * 1.05);
+        const dotR = 2 + (d.score / 100) * 4;
+        const t = d.score / 100;
+        const dotColor = `rgba(${Math.round(140 + (84 - 140) * t)}, ${Math.round(126 + (214 - 126) * t)}, ${Math.round(242 + (199 - 242) * t)}, ${0.4 + t * 0.6})`;
+        return <circle key={d.key} cx={x} cy={y} r={dotR} fill={dotColor} />;
+      })}
+      <text x={w / 2} y={h - 6} textAnchor="middle" fontSize="9" fill={C.textTertiary} fontFamily={MONO} letterSpacing="0.05em">v{version}</text>
+    </svg>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* ADD ACTIVITY MODAL                                                  */
+/* ---------------------------------------------------------------- */
+
+function AddActivityModal({ onClose, onSave }) {
+  const [label, setLabel] = useState("");
+  const [selected, setSelected] = useState([]);
+  function toggleDim(key) { setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])); }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <div className="w-full max-w-md rounded-2xl p-5" style={{ background: C.surfaceRaised, border: `1px solid ${C.hairline}` }}>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-medium">Add your own activity</span>
+          <button onClick={onClose}><Icon name="x" size={16} color={C.textTertiary} /></button>
+        </div>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Cold-call practice, journaling, gym session…"
+          className="w-full text-sm rounded-xl p-3 outline-none" style={{ background: C.bgSoft, border: `1px solid ${C.hairline}`, color: C.textPrimary }} />
+        <div className="text-xs mt-4 mb-2" style={{ color: C.textSecondary }}>Which areas does this develop?</div>
+        <div className="flex flex-wrap gap-2">
+          {DIM_DEFS.map((d) => (
+            <button key={d.key} onClick={() => toggleDim(d.key)} className="text-xs px-3 py-1.5 rounded-full"
+              style={{ background: selected.includes(d.key) ? C.signalDim : "transparent", color: selected.includes(d.key) ? C.signal : C.textSecondary, border: `1px solid ${selected.includes(d.key) ? C.signal : C.hairline}` }}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button disabled={!label.trim() || selected.length === 0} onClick={() => { onSave(label.trim(), selected, true); onClose(); }}
+            className="flex-1 text-sm px-3 py-2 rounded-xl" style={{ background: label.trim() && selected.length ? C.signal : C.hairline, color: label.trim() && selected.length ? "#04201C" : C.textTertiary, fontWeight: 600 }}>
+            Save & log for today
+          </button>
+          <button disabled={!label.trim() || selected.length === 0} onClick={() => { onSave(label.trim(), selected, false); onClose(); }}
+            className="text-sm px-3 py-2 rounded-xl" style={{ background: "transparent", color: C.textSecondary, border: `1px solid ${C.hairline}` }}>
+            Save only
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* ROOT COMPONENT                                                      */
+/* ---------------------------------------------------------------- */
+
+function PersonalDevelopmentOS() {
+  const [status, setStatus] = useState("loading");
+  const [data, setData] = useState(null);
+  const [saveError, setSaveError] = useState(false);
+  const [tab, setTab] = useState("home");
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [resetArm, setResetArm] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get(STORAGE_KEY);
+        if (res && res.value) setData(JSON.parse(res.value));
+        else { const fresh = defaultData(); setData(fresh); persist(fresh); }
+      } catch (e) {
+        const fresh = defaultData();
+        setData(fresh);
+        persist(fresh);
+      } finally {
+        setStatus("ready");
+      }
+    })();
+    // eslint-disable-next-line
+  }, []);
+
+  async function persist(next) {
+    try { const r = await storage.set(STORAGE_KEY, JSON.stringify(next)); setSaveError(!r); }
+    catch (e) { setSaveError(true); }
+  }
+  function updateData(mutator) {
+    setData((prev) => { const next = mutator(prev); persist(next); return next; });
+  }
+  function addLogEntry(label, dims, source = "suggested") {
+    updateData((prev) => ({ ...prev, log: [...prev.log, { id: genId(), ts: new Date().toISOString(), label, dims, source }] }));
+  }
+  function removeTodayEntry(label) {
+    const tk = todayKey();
+    updateData((prev) => ({ ...prev, log: prev.log.filter((e) => !(e.label === label && e.ts.slice(0, 10) === tk)) }));
+  }
+  function toggleActivity(label, dims, source) {
+    if (loggedToday(data.log, label)) removeTodayEntry(label);
+    else addLogEntry(label, dims, source);
+  }
+  function addCustomActivity(label, dims, logNow) {
+    updateData((prev) => {
+      const activity = { id: genId(), label, dims };
+      const customActivities = [...prev.customActivities, activity];
+      let log = prev.log;
+      if (logNow) log = [...log, { id: genId(), ts: new Date().toISOString(), label, dims, source: "custom" }];
+      return { ...prev, customActivities, log };
+    });
+  }
+  function setTargetIndex(val) { updateData((prev) => ({ ...prev, profile: { ...prev.profile, targetIndex: val } })); }
+  function resetAll() { const fresh = defaultData(); setData(fresh); persist(fresh); setResetArm(false); }
+
+  const dimScores = useMemo(() => {
+    if (!data) return {};
+    const now = new Date().toISOString();
+    const obj = {};
+    DIM_DEFS.forEach((d) => (obj[d.key] = scoreAsOf(d.key, now, data.log)));
+    return obj;
+  }, [data]);
+
+  const dims = useMemo(() => {
+    if (!data) return [];
+    return DIM_DEFS.map((d) => {
+      const score = dimScores[d.key];
+      const weekAgo = scoreAsOf(d.key, isoDaysAgo(7), data.log);
+      const monthAgo = scoreAsOf(d.key, isoDaysAgo(30), data.log);
+      const sixMoAgo = scoreAsOf(d.key, isoDaysAgo(180), data.log);
+      return { ...d, score, weekly: score - weekAgo, monthly: score - monthAgo, monthAgo, sixMoAgo };
+    });
+  }, [data, dimScores]);
+
+  const avg = useMemo(() => (dims.length ? dims.reduce((s, d) => s + d.score, 0) / dims.length : 50), [dims]);
+  const dimsWithStatus = useMemo(() => dims.map((d) => ({ ...d, status: d.score >= avg + 5 ? "strength" : d.score <= avg - 5 ? "weakness" : "balanced" })), [dims, avg]);
+  const devIndex = avg;
+  const devIndexMonthAgo = useMemo(() => {
+    if (!data) return 50;
+    return DIM_DEFS.reduce((s, d) => s + scoreAsOf(d.key, isoDaysAgo(30), data.log), 0) / DIM_DEFS.length;
+  }, [data]);
+
+  const weakest = useMemo(() => (dims.length ? [...dims].sort((a, b) => a.score - b.score)[0] : null), [dims]);
+  const strongest = useMemo(() => (dims.length ? [...dims].sort((a, b) => b.score - a.score)[0] : null), [dims]);
+  const fastestImproving = useMemo(() => (dims.length ? [...dims].sort((a, b) => b.monthly - a.monthly)[0] : null), [dims]);
+  const streaks = useMemo(() => (data ? computeStreaks(data.log) : { current: 0, longest: 0 }), [data]);
+  const suggestions = useMemo(() => (Object.keys(dimScores).length ? getSuggestions(dimScores) : []), [dimScores]);
+
+  if (status === "loading") {
+    return <div style={{ background: C.bg, minHeight: 400, fontFamily: SANS, color: C.textSecondary }} className="flex items-center justify-center text-sm">Loading your development data…</div>;
+  }
+
+  const NAV = [
+    { key: "home", label: "Home", icon: "home" },
+    { key: "develop", label: "Develop", icon: "grid" },
+    { key: "progress", label: "Progress", icon: "barChart" },
+    { key: "me", label: "Me", icon: "user" },
+    { key: "insights", label: "Insights", icon: "compass" },
+  ];
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: SANS, color: C.textPrimary }}>
+      <div className="max-w-3xl mx-auto md:flex md:gap-6 md:py-6">
+        <div className="hidden md:flex md:flex-col md:w-48 md:shrink-0 md:gap-1 md:h-fit md:sticky md:top-6">
+          <div className="px-3 pb-4">
+            <div className="text-sm font-semibold" style={{ letterSpacing: "-0.01em" }}>Development OS</div>
+            <div className="mt-2"><SyncBadge saveError={saveError} onRetry={() => persist(data)} /></div>
+          </div>
+          {NAV.map((n) => {
+            const active = tab === n.key;
+            return (
+              <button key={n.key} onClick={() => setTab(n.key)} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition"
+                style={{ background: active ? C.surfaceRaised : "transparent", color: active ? C.textPrimary : C.textSecondary }}>
+                <Icon name={n.icon} size={16} />{n.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 px-4 pt-6 pb-24 md:px-0 md:pb-6">
+          {tab === "home" && <HomePage dims={dimsWithStatus} devIndex={devIndex} devIndexMonthAgo={devIndexMonthAgo} streaks={streaks} suggestions={suggestions} log={data.log} toggleActivity={toggleActivity} weakest={weakest} fastestImproving={fastestImproving} setTab={setTab} setShowAddModal={setShowAddModal} />}
+          {tab === "develop" && <DevelopPage suggestions={suggestions} log={data.log} toggleActivity={toggleActivity} customActivities={data.customActivities} setShowAddModal={setShowAddModal} addLogEntry={addLogEntry} />}
+          {tab === "progress" && <ProgressPage dims={dimsWithStatus} log={data.log} />}
+          {tab === "me" && <MePage dims={dimsWithStatus} devIndex={devIndex} log={data.log} profile={data.profile} setTargetIndex={setTargetIndex} resetArm={resetArm} setResetArm={setResetArm} resetAll={resetAll} />}
+          {tab === "insights" && <InsightsPage weakest={weakest} fastestImproving={fastestImproving} strongest={strongest} log={data.log} devIndex={devIndex} />}
+        </div>
+      </div>
+
+      <div className="md:hidden fixed bottom-0 left-0 right-0 flex justify-around py-2" style={{ background: C.bgSoft, borderTop: `1px solid ${C.hairline}` }}>
+        {NAV.map((n) => {
+          const active = tab === n.key;
+          return (
+            <button key={n.key} onClick={() => setTab(n.key)} className="flex flex-col items-center gap-1 px-2 py-1">
+              <Icon name={n.icon} size={18} color={active ? C.signal : C.textTertiary} />
+              <span className="text-xs" style={{ color: active ? C.signal : C.textTertiary }}>{n.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {showAddModal && <AddActivityModal onClose={() => setShowAddModal(false)} onSave={(label, dimsSel, logNow) => addCustomActivity(label, dimsSel, logNow)} />}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* HOME PAGE                                                           */
+/* ---------------------------------------------------------------- */
+
+function HomePage({ dims, devIndex, devIndexMonthAgo, streaks, suggestions, log, toggleActivity, weakest, fastestImproving, setTab, setShowAddModal }) {
+  const monthPct = devIndexMonthAgo > 0 ? (((devIndex - devIndexMonthAgo) / devIndexMonthAgo) * 100).toFixed(1) : "0.0";
+  const isEmpty = log.length === 0;
+  const doneCount = suggestions.filter((s) => loggedToday(log, s.label)).length;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm" style={{ color: C.textSecondary }}>Good to see you</div>
+          <div className="text-xs mt-0.5" style={{ color: C.textTertiary, fontFamily: MONO }}>Your development, in progress</div>
+        </div>
+      </div>
+      {isEmpty && (
+        <Card style={{ background: C.violetDim, border: `1px solid ${C.violet}` }}>
+          <div className="text-sm font-medium" style={{ color: C.textPrimary }}>Nothing logged yet</div>
+          <p className="text-xs mt-1" style={{ color: C.textSecondary }}>Every dimension starts at a neutral baseline of 50 until you add real evidence. Log a few activities and your scores will start to move.</p>
+          <button onClick={() => setShowAddModal(true)} className="text-xs mt-3 px-3 py-1.5 rounded-full inline-flex items-center gap-1" style={{ background: C.signal, color: "#04201C", fontWeight: 600 }}>
+            <Icon name="plus" size={12} /> Log your first activity
+          </button>
+        </Card>
+      )}
+      <Card style={{ paddingTop: 24, paddingBottom: 20 }}>
+        <AvatarGlyph pct={devIndex} dims={dims} />
+        <div className="text-center mt-4">
+          <div className="text-4xl font-semibold" style={{ fontFamily: MONO, letterSpacing: "-0.02em" }}>{devIndex.toFixed(1)}<span className="text-lg" style={{ color: C.textTertiary }}> /100</span></div>
+          <div className="text-xs mt-1" style={{ color: C.textSecondary }}>Development index</div>
+          <div className="mt-2"><TrendTag pct={Number(monthPct)} /> <span className="text-xs" style={{ color: C.textTertiary }}>% vs 30 days ago</span></div>
+        </div>
+      </Card>
+      <Card>
+        <SectionHeading title="My development" sub="Scores reflect repeated logged activity, not a single session." />
+        <div className="flex flex-col gap-2.5">
+          {dims.map((d) => (
+            <div key={d.key} className="flex items-center gap-3">
+              <Icon name={d.icon} size={15} color={C.textSecondary} />
+              <div className="flex-1 text-sm" style={{ color: C.textPrimary }}>{d.label}</div>
+              <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: C.hairline }}><div className="h-full rounded-full" style={{ width: `${d.score}%`, background: d.status === "weakness" ? C.amber : C.signal }} /></div>
+              <div className="text-sm w-6 text-right" style={{ fontFamily: MONO }}>{d.score}</div>
+              <TrendTag pct={d.monthly} />
+            </div>
+          ))}
+        </div>
+      </Card>
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <div className="flex items-center gap-2"><Icon name="flame" size={16} color={C.amber} /><span className="text-sm font-medium">{streaks.current}-day streak</span></div>
+          <div className="text-xs mt-2" style={{ color: C.textSecondary }}>Longest: {streaks.longest} days</div>
+        </Card>
+        <Card>
+          <div className="flex items-center gap-2"><Icon name="target" size={16} color={C.violet} /><span className="text-sm font-medium">Current focus</span></div>
+          {weakest && <div className="text-sm mt-2" style={{ color: C.textPrimary }}>{weakest.label}</div>}
+          {weakest && fastestImproving && <div className="text-xs mt-1" style={{ color: C.textSecondary }}>Developing slower than {fastestImproving.label.toLowerCase()}.</div>}
+        </Card>
+      </div>
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <SectionHeading title="Today's suggestions" />
+          <span className="text-sm" style={{ fontFamily: MONO, color: C.textSecondary }}>{doneCount} / {suggestions.length}</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {suggestions.map((s) => {
+            const done = loggedToday(log, s.label);
+            return (
+              <button key={s.label} onClick={() => toggleActivity(s.label, s.dims, "suggested")} className="flex items-center gap-3 text-left">
+                <Icon name={done ? "check" : "circle"} size={16} color={done ? C.signal : C.textTertiary} />
+                <span className="text-sm flex-1" style={{ color: done ? C.textSecondary : C.textPrimary, textDecoration: done ? "line-through" : "none" }}>{s.label}</span>
+                <span className="text-xs" style={{ color: C.textTertiary }}>{s.dimLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex gap-3 mt-3">
+          <button onClick={() => setTab("develop")} className="text-xs inline-flex items-center gap-1" style={{ color: C.signal }}>Open Develop <Icon name="chevronRight" size={12} /></button>
+          <button onClick={() => setShowAddModal(true)} className="text-xs inline-flex items-center gap-1" style={{ color: C.textSecondary }}><Icon name="plus" size={12} /> Add your own</button>
+        </div>
+      </Card>
+      {weakest && fastestImproving && !isEmpty && (
+        <Card>
+          <div className="flex items-center gap-2 mb-2"><Icon name="sparkles" size={16} color={C.violet} /><span className="text-sm font-medium">AI Mirror</span></div>
+          <p className="text-sm" style={{ color: C.textSecondary }}>Your {fastestImproving.label.toLowerCase()} is improving fastest right now, while {weakest.label.toLowerCase()} is lagging behind the rest.</p>
+          <button onClick={() => setTab("insights")} className="text-xs mt-2 inline-flex items-center gap-1" style={{ color: C.signal }}>See full mirror <Icon name="chevronRight" size={12} /></button>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* DEVELOP PAGE                                                        */
+/* ---------------------------------------------------------------- */
+
+function DevelopPage({ suggestions, log, toggleActivity, customActivities, setShowAddModal, addLogEntry }) {
+  const tk = todayKey();
+  const todaysEntries = log.filter((e) => e.ts.slice(0, 10) === tk);
+  const tally = {};
+  todaysEntries.forEach((e) => (e.dims || []).forEach((dk) => (tally[dk] = (tally[dk] || 0) + 1)));
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionHeading title="Develop" sub="Missions, practice labs, and today's knowledge." />
+      <Card>
+        <div className="flex items-center justify-between mb-3"><span className="text-sm font-medium">Suggested for today</span></div>
+        <div className="flex flex-col gap-2 mb-2">
+          {suggestions.map((s) => {
+            const done = loggedToday(log, s.label);
+            return (
+              <button key={s.label} onClick={() => toggleActivity(s.label, s.dims, "suggested")} className="flex items-center gap-3 text-left">
+                <Icon name={done ? "check" : "circle"} size={16} color={done ? C.signal : C.textTertiary} />
+                <span className="text-sm flex-1" style={{ color: done ? C.textSecondary : C.textPrimary, textDecoration: done ? "line-through" : "none" }}>{s.label}</span>
+                <span className="text-xs" style={{ color: C.textTertiary }}>{s.dimLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+        {customActivities.length > 0 && (
+          <div className="pt-3 mt-2" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+            <div className="text-xs mb-2" style={{ color: C.textTertiary }}>Your activities</div>
+            <div className="flex flex-col gap-2">
+              {customActivities.map((a) => {
+                const done = loggedToday(log, a.label);
+                return (
+                  <button key={a.id} onClick={() => toggleActivity(a.label, a.dims, "custom")} className="flex items-center gap-3 text-left">
+                    <Icon name={done ? "check" : "circle"} size={16} color={done ? C.signal : C.textTertiary} />
+                    <span className="text-sm flex-1" style={{ color: done ? C.textSecondary : C.textPrimary, textDecoration: done ? "line-through" : "none" }}>{a.label}</span>
+                    <span className="text-xs" style={{ color: C.textTertiary }}>{a.dims.map((k) => DIM_LABEL[k]).join(", ")}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <button onClick={() => setShowAddModal(true)} className="text-xs mt-3 px-3 py-1.5 rounded-full inline-flex items-center gap-1" style={{ background: C.surfaceRaised, color: C.textPrimary, border: `1px solid ${C.hairline}` }}>
+          <Icon name="plus" size={12} /> Add activity
+        </button>
+        {Object.keys(tally).length > 0 && (
+          <div className="pt-3 mt-3" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+            <div className="text-xs mb-2" style={{ color: C.textTertiary }}>Logged today</div>
+            <div className="flex flex-wrap gap-2">{Object.entries(tally).map(([dim, n]) => <span key={dim} className="text-xs px-2 py-1 rounded-full" style={{ background: C.signalDim, color: C.signal }}>{DIM_LABEL[dim]} ×{n}</span>)}</div>
+          </div>
+        )}
+      </Card>
+      <CommunicationLab addLogEntry={addLogEntry} log={log} />
+      <BusinessLab addLogEntry={addLogEntry} log={log} />
+      <KnowledgeLab addLogEntry={addLogEntry} log={log} />
+    </div>
+  );
+}
+
+function CommunicationLab({ addLogEntry, log }) {
+  const [prompt] = useState(SPEAKING_PROMPTS[dateSeed(todayKey()) % SPEAKING_PROMPTS.length]);
+  const [seconds, setSeconds] = useState(60);
+  const [running, setRunning] = useState(false);
+  const [response, setResponse] = useState("");
+  const [result, setResult] = useState(null);
+  const timerRef = useRef(null);
+  const label = "Impromptu speaking practice";
+  const alreadyLogged = loggedToday(log, label);
+  useEffect(() => {
+    if (running && seconds > 0) timerRef.current = setTimeout(() => setSeconds((s) => s - 1), 1000);
+    else if (seconds === 0) setRunning(false);
+    return () => clearTimeout(timerRef.current);
+  }, [running, seconds]);
+  function evaluate() {
+    const words = response.trim().split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const fillerCount = (response.match(/\b(um|uh|like|you know|basically)\b/gi) || []).length;
+    const clarity = Math.max(35, Math.min(96, 55 + wordCount * 0.6 - fillerCount * 6));
+    const structure = Math.max(35, Math.min(94, 45 + wordCount * 0.4));
+    const vocabulary = Math.max(35, Math.min(95, 50 + new Set(words.map((w) => w.toLowerCase())).size * 1.1));
+    const confidence = Math.max(35, Math.min(92, 60 - fillerCount * 8 + wordCount * 0.2));
+    const overall = Math.round((clarity + structure + vocabulary + confidence) / 4);
+    setResult({ clarity: Math.round(clarity), structure: Math.round(structure), vocabulary: Math.round(vocabulary), confidence: Math.round(confidence), overall });
+    if (!alreadyLogged) addLogEntry(label, ["communication"], "lab");
+  }
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-1"><Icon name="mic" size={16} color={C.violet} /><span className="text-sm font-medium">Communication lab · impromptu speaking</span></div>
+      <p className="text-sm mt-2" style={{ color: C.textPrimary }}>"{prompt}"</p>
+      <div className="flex items-center gap-3 mt-3">
+        <span className="text-lg" style={{ fontFamily: MONO, color: seconds <= 10 ? C.danger : C.textPrimary }}>{String(Math.floor(seconds / 60)).padStart(2, "0")}:{String(seconds % 60).padStart(2, "0")}</span>
+        <button onClick={() => { if (seconds === 0) setSeconds(60); setRunning((r) => !r); }} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full" style={{ background: C.surfaceRaised, color: C.textPrimary, border: `1px solid ${C.hairline}` }}>
+          <Icon name={running ? "square" : "play"} size={12} /> {running ? "Pause" : "Start"}
+        </button>
+      </div>
+      <textarea value={response} onChange={(e) => setResponse(e.target.value)} placeholder="Type what you'd say (voice capture can be added later)…"
+        className="w-full mt-3 text-sm rounded-xl p-3 outline-none" style={{ background: C.bgSoft, border: `1px solid ${C.hairline}`, color: C.textPrimary, minHeight: 80 }} />
+      <button onClick={evaluate} disabled={!response.trim()} className="text-xs mt-3 px-3 py-1.5 rounded-full" style={{ background: response.trim() ? C.signalDim : "transparent", color: response.trim() ? C.signal : C.textTertiary, border: `1px solid ${response.trim() ? C.signal : C.hairline}` }}>Submit for evaluation</button>
+      {result && (
+        <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+          <div className="text-xs mb-2" style={{ color: C.textTertiary }}>Automated heuristic evaluation — logged as evidence for Communication ✓</div>
+          <div className="text-sm mb-2">Score: <span style={{ fontFamily: MONO, color: C.signal }}>{result.overall}/100</span></div>
+          {[["Clarity", result.clarity], ["Structure", result.structure], ["Vocabulary", result.vocabulary], ["Confidence", result.confidence]].map(([l, val]) => (
+            <div key={l} className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs w-20" style={{ color: C.textSecondary }}>{l}</span>
+              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: C.hairline }}><div className="h-full rounded-full" style={{ width: `${val}%`, background: C.signal }} /></div>
+              <span className="text-xs w-6 text-right" style={{ fontFamily: MONO }}>{val}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function BusinessLab({ addLogEntry, log }) {
+  const [scenario] = useState(CASE_SCENARIOS[dateSeed(todayKey() + "b") % CASE_SCENARIOS.length]);
+  const [response, setResponse] = useState("");
+  const [result, setResult] = useState(null);
+  const label = "Business case walkthrough";
+  const alreadyLogged = loggedToday(log, label);
+  function evaluate() {
+    const words = response.trim().split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const reasoningWords = (response.match(/\b(because|therefore|so|hence)\b/gi) || []).length;
+    const altWords = (response.match(/\b(alternative|instead|option|trade-off|tradeoff)\b/gi) || []).length;
+    const riskWords = (response.match(/\b(risk|assumption|assume|downside)\b/gi) || []).length;
+    const problemId = Math.max(35, Math.min(95, 45 + wordCount * 0.4));
+    const logic = Math.max(35, Math.min(95, 50 + reasoningWords * 8));
+    const alternatives = Math.max(35, Math.min(95, 45 + altWords * 10));
+    const decisionQuality = Math.max(35, Math.min(95, 45 + riskWords * 9));
+    const overall = Math.round((problemId + logic + alternatives + decisionQuality) / 4);
+    setResult({ problemId: Math.round(problemId), logic: Math.round(logic), alternatives: Math.round(alternatives), decisionQuality: Math.round(decisionQuality), overall });
+    if (!alreadyLogged) addLogEntry(label, ["business", "analytical"], "lab");
+  }
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-1"><Icon name="briefcase" size={16} color={C.violet} /><span className="text-sm font-medium">Business case lab</span></div>
+      <p className="text-sm mt-2" style={{ color: C.textPrimary }}>{scenario}</p>
+      <textarea value={response} onChange={(e) => setResponse(e.target.value)} placeholder="Explain how you'd diagnose and approach this…"
+        className="w-full mt-3 text-sm rounded-xl p-3 outline-none" style={{ background: C.bgSoft, border: `1px solid ${C.hairline}`, color: C.textPrimary, minHeight: 90 }} />
+      <button onClick={evaluate} disabled={!response.trim()} className="text-xs mt-3 px-3 py-1.5 rounded-full" style={{ background: response.trim() ? C.signalDim : "transparent", color: response.trim() ? C.signal : C.textTertiary, border: `1px solid ${response.trim() ? C.signal : C.hairline}` }}>Submit for evaluation</button>
+      {result && (
+        <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+          <div className="text-xs mb-2" style={{ color: C.textTertiary }}>Automated heuristic evaluation — logged as evidence for Business & Analytical ✓</div>
+          <div className="text-sm mb-2">Overall: <span style={{ fontFamily: MONO, color: C.signal }}>{result.overall}/100</span></div>
+          {[["Problem identification", result.problemId], ["Logic", result.logic], ["Alternatives considered", result.alternatives], ["Decision quality", result.decisionQuality]].map(([l, val]) => (
+            <div key={l} className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs w-36" style={{ color: C.textSecondary }}>{l}</span>
+              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: C.hairline }}><div className="h-full rounded-full" style={{ width: `${val}%`, background: C.violet }} /></div>
+              <span className="text-xs w-6 text-right" style={{ fontFamily: MONO }}>{val}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function KnowledgeLab({ addLogEntry, log }) {
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [answers, setAnswers] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const score = QUIZ.filter((q, i) => answers[i] === q.answer).length;
+  const label = "Today's 5 things + quiz";
+  const alreadyLogged = loggedToday(log, label);
+  function submit() { setSubmitted(true); if (!alreadyLogged) addLogEntry(label, ["knowledge"], "lab"); }
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-3"><Icon name="book" size={16} color={C.violet} /><span className="text-sm font-medium">Today's 5 things to know</span></div>
+      <div className="flex flex-col gap-3">
+        {KNOWLEDGE_ITEMS.map((item) => (
+          <div key={item.headline}>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: C.surfaceRaised, color: C.textTertiary }}>{item.cat}</span>
+            <div className="text-sm mt-1" style={{ color: C.textPrimary }}>{item.headline}</div>
+            <div className="text-xs mt-0.5" style={{ color: C.textSecondary }}>{item.blurb}</div>
+          </div>
+        ))}
+      </div>
+      {!quizOpen && <button onClick={() => setQuizOpen(true)} className="text-xs mt-4 px-3 py-1.5 rounded-full" style={{ background: C.signalDim, color: C.signal, border: `1px solid ${C.signal}` }}>Quiz me</button>}
+      {quizOpen && !submitted && (
+        <div className="mt-4 pt-4 flex flex-col gap-4" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+          {QUIZ.map((q, i) => (
+            <div key={q.q}>
+              <div className="text-xs mb-1" style={{ color: C.textTertiary }}>{q.type}</div>
+              <div className="text-sm mb-2" style={{ color: C.textPrimary }}>{q.q}</div>
+              <div className="flex flex-col gap-1.5">
+                {q.options.map((opt, oi) => (
+                  <button key={opt} onClick={() => setAnswers((a) => ({ ...a, [i]: oi }))} className="text-left text-sm px-3 py-2 rounded-lg"
+                    style={{ background: answers[i] === oi ? C.signalDim : C.bgSoft, color: answers[i] === oi ? C.signal : C.textSecondary, border: `1px solid ${answers[i] === oi ? C.signal : C.hairline}` }}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button onClick={submit} disabled={Object.keys(answers).length < QUIZ.length} className="text-xs px-3 py-1.5 rounded-full self-start" style={{ background: C.surfaceRaised, color: C.textPrimary, border: `1px solid ${C.hairline}` }}>Submit answers</button>
+        </div>
+      )}
+      {submitted && (
+        <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+          <div className="text-sm">Knowledge score: <span style={{ fontFamily: MONO, color: C.signal }}>{score} / {QUIZ.length}</span></div>
+          <div className="text-xs mt-1" style={{ color: C.textSecondary }}>Logged as evidence for Knowledge ✓ Recall, understanding, and application were each tested.</div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* PROGRESS PAGE                                                       */
+/* ---------------------------------------------------------------- */
+
+function buildTrend(days, points, log) {
+  const arr = [];
+  for (let i = points - 1; i >= 0; i--) {
+    const cutoff = new Date(Date.now() - i * (days / (points - 1)) * 86400000).toISOString();
+    const avgVal = DIM_DEFS.reduce((s, d) => s + scoreAsOf(d.key, cutoff, log), 0) / DIM_DEFS.length;
+    arr.push({ i: points - 1 - i, v: Math.round(avgVal * 10) / 10 });
+  }
+  return arr;
+}
+
+function ProgressPage({ dims, log }) {
+  const [range, setRange] = useState("30D");
+  const [selectedDim, setSelectedDim] = useState(dims[2]?.key || "communication");
+  const [radarMode, setRadarMode] = useState("30d");
+  const [selectedDay, setSelectedDay] = useState(null);
+  const RANGE_CONF = { "7D": { days: 7, points: 8 }, "30D": { days: 30, points: 10 }, "3M": { days: 90, points: 12 }, "6M": { days: 180, points: 12 }, "1Y": { days: 365, points: 12 } };
+  const trendData = useMemo(() => { const c = RANGE_CONF[range]; return buildTrend(c.days, c.points, log); }, [range, log]);
+  const dim = dims.find((d) => d.key === selectedDim) || dims[0];
+  const dimSeries = useMemo(() => {
+    const arr = [];
+    for (let i = 9; i >= 0; i--) { const cutoff = new Date(Date.now() - i * 3 * 86400000).toISOString(); arr.push({ i: 9 - i, v: scoreAsOf(dim.key, cutoff, log) }); }
+    return arr;
+  }, [dim, log]);
+  const radarData = useMemo(() => dims.map((d) => ({ dimension: d.label.split(" ")[0], current: d.score, compare: radarMode === "30d" ? d.monthAgo : radarMode === "6mo" ? d.sixMoAgo : Math.min(98, d.score + 15) })), [dims, radarMode]);
+  const heatmap = useMemo(() => {
+    const out = [];
+    for (let i = 34; i >= 0; i--) {
+      const day = new Date(Date.now() - i * 86400000);
+      const dk = day.toISOString().slice(0, 10);
+      const entries = log.filter((e) => e.ts.slice(0, 10) === dk);
+      const distinct = new Set(entries.flatMap((e) => e.dims || []));
+      out.push({ dk, intensity: Math.min(4, distinct.size), dayScore: dayScoreFor(dk, log), entries });
+    }
+    return out;
+  }, [log]);
+  const heatColors = [C.hairlineSoft, "rgba(84,214,199,0.22)", "rgba(84,214,199,0.42)", "rgba(84,214,199,0.65)", C.signal];
+  const records = useMemo(() => {
+    const streaks = computeStreaks(log);
+    const byDim = {};
+    log.forEach((e) => (e.dims || []).forEach((dk) => (byDim[dk] = (byDim[dk] || 0) + 1)));
+    let topDim = null, topDimCount = 0;
+    Object.entries(byDim).forEach(([k, v]) => { if (v > topDimCount) { topDim = k; topDimCount = v; } });
+    const days = [...new Set(log.map((e) => e.ts.slice(0, 10)))];
+    let bestDay = null, bestScore = -1;
+    days.forEach((dk) => { const s = dayScoreFor(dk, log); if (s > bestScore) { bestScore = s; bestDay = dk; } });
+    return { longestStreak: streaks.longest, currentStreak: streaks.current, topDim, bestScore: Math.max(0, bestScore), totalLogged: log.length };
+  }, [log]);
+  const history = useMemo(() => {
+    const items = [];
+    if (log.length > 0) {
+      const sorted = [...log].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+      items.push({ date: sorted[0].ts, label: "Started development journey" });
+      const seenDims = new Set();
+      const dayKeys = [...new Set(sorted.map((e) => e.ts.slice(0, 10)))].sort();
+      let run = 1;
+      const thresholds = [7, 14, 30, 60, 100];
+      const hit = new Set();
+      for (let i = 0; i < dayKeys.length; i++) {
+        if (i > 0) { const diff = (new Date(dayKeys[i]) - new Date(dayKeys[i - 1])) / 86400000; run = diff === 1 ? run + 1 : 1; }
+        thresholds.forEach((th) => { if (run === th && !hit.has(th)) { hit.add(th); items.push({ date: dayKeys[i] + "T00:00:00.000Z", label: `${th}-day streak reached` }); } });
+      }
+      sorted.forEach((e) => (e.dims || []).forEach((dk) => { if (!seenDims.has(dk)) { seenDims.add(dk); items.push({ date: e.ts, label: `First activity logged for ${DIM_LABEL[dk]}` }); } }));
+    }
+    return items.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [log]);
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionHeading title="Progress" sub="Statistical development over time, computed from your logged activity." />
+      <Card>
+        <span className="text-sm font-medium">Overall development trend</span>
+        <div className="flex gap-2 mt-3 mb-3 flex-wrap">{Object.keys(RANGE_CONF).map((r) => <Pill key={r} active={range === r} onClick={() => setRange(r)}>{r}</Pill>)}</div>
+        <MiniLineChart data={trendData} color={C.signal} height={180} />
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">Dimension progress</span>
+        <div className="flex gap-2 mt-3 mb-3 flex-wrap">{dims.map((d) => <Pill key={d.key} active={selectedDim === d.key} onClick={() => setSelectedDim(d.key)}>{d.label.split(" ")[0]}</Pill>)}</div>
+        <MiniLineChart data={dimSeries} color={C.violet} height={140} />
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          {[["This week", dim.weekly], ["This month", dim.monthly], ["6 months", dim.score - dim.sixMoAgo]].map(([l, val]) => (
+            <div key={l} className="text-center">
+              <div className="text-xs" style={{ color: C.textTertiary }}>{l}</div>
+              <div className="text-sm mt-0.5" style={{ fontFamily: MONO, color: val >= 0 ? C.signal : C.danger }}>{val >= 0 ? "+" : ""}{val}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">Development radar</span>
+        <div className="flex gap-2 mt-3 mb-2 flex-wrap">
+          <Pill active={radarMode === "30d"} onClick={() => setRadarMode("30d")}>Today vs 30 days ago</Pill>
+          <Pill active={radarMode === "6mo"} onClick={() => setRadarMode("6mo")}>Today vs 6 months ago</Pill>
+          <Pill active={radarMode === "target"} onClick={() => setRadarMode("target")}>Current vs target</Pill>
+        </div>
+        <MiniRadarChart data={radarData} size={280} />
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">Development heatmap</span>
+        <div className="grid grid-cols-7 gap-1 mt-3">
+          {heatmap.map((d) => <button key={d.dk} onClick={() => setSelectedDay(d)} className="aspect-square rounded" style={{ background: heatColors[d.intensity], outline: selectedDay?.dk === d.dk ? `1px solid ${C.signal}` : "none" }} />)}
+        </div>
+        {selectedDay && (
+          <div className="mt-3 pt-3 text-sm" style={{ borderTop: `1px solid ${C.hairlineSoft}` }}>
+            <div className="flex justify-between"><span style={{ fontFamily: MONO }}>{selectedDay.dk}</span><button onClick={() => setSelectedDay(null)}><Icon name="x" size={14} color={C.textTertiary} /></button></div>
+            <div className="text-xs mt-1" style={{ color: C.textSecondary }}>Day score: {selectedDay.dayScore} · {selectedDay.entries.length} activities logged</div>
+            {selectedDay.entries.length > 0 && <div className="text-xs mt-1" style={{ color: C.textSecondary }}>{selectedDay.entries.map((e) => e.label).join(", ")}</div>}
+          </div>
+        )}
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">My records</span>
+        <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Longest streak</div><div style={{ fontFamily: MONO }}>{records.longestStreak} days</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Current streak</div><div style={{ fontFamily: MONO }}>{records.currentStreak} days</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Best day score</div><div style={{ fontFamily: MONO }}>{records.bestScore}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Most-logged area</div><div>{records.topDim ? DIM_LABEL[records.topDim] : "—"}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Total activities logged</div><div style={{ fontFamily: MONO }}>{records.totalLogged}</div></div>
+        </div>
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">Development history</span>
+        <div className="flex flex-col mt-3">
+          {history.length === 0 && <div className="text-sm" style={{ color: C.textSecondary }}>Milestones will appear here as you log activity.</div>}
+          {history.map((h, i) => (
+            <div key={h.label + h.date} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="w-2 h-2 rounded-full" style={{ background: C.signal }} />
+                {i < history.length - 1 && <div className="w-px flex-1" style={{ background: C.hairline }} />}
+              </div>
+              <div className="pb-4">
+                <div className="text-xs" style={{ color: C.textTertiary, fontFamily: MONO }}>{new Date(h.date).toLocaleDateString()}</div>
+                <div className="text-sm" style={{ color: C.textPrimary }}>{h.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* ME PAGE                                                             */
+/* ---------------------------------------------------------------- */
+
+function EvolutionTrack({ label, before, current, target }) {
+  return (
+    <div className="mb-4">
+      <div className="flex justify-between text-xs mb-1.5"><span style={{ color: C.textPrimary }}>{label}</span><span style={{ fontFamily: MONO, color: C.textSecondary }}>{current}</span></div>
+      <div className="relative h-1.5 rounded-full" style={{ background: C.hairline }}>
+        <div className="absolute top-1/2 w-1.5 h-1.5 rounded-full" style={{ left: `${before}%`, background: C.textTertiary, transform: "translate(-50%,-50%)" }} />
+        <div className="absolute top-1/2 w-2.5 h-2.5 rounded-full" style={{ left: `${current}%`, background: C.signal, transform: "translate(-50%,-50%)" }} />
+        <div className="absolute top-1/2 w-2.5 h-2.5 rounded-full" style={{ left: `${target}%`, border: `1.5px solid ${C.violet}`, background: "transparent", transform: "translate(-50%,-50%)" }} />
+      </div>
+    </div>
+  );
+}
+
+function MePage({ dims, devIndex, log, profile, setTargetIndex, resetArm, setResetArm, resetAll }) {
+  const startDate = profile.startDate;
+  const beforeCutoff = new Date(Math.max(new Date(startDate).getTime(), Date.now() - 90 * 86400000)).toISOString();
+  const dimsBefore = dims.map((d) => ({ ...d, score: scoreAsOf(d.key, beforeCutoff, log) }));
+  const beforeIndex = dimsBefore.reduce((s, d) => s + d.score, 0) / dimsBefore.length;
+  const shift = profile.targetIndex - devIndex;
+  const dimsTarget = dims.map((d) => ({ ...d, score: Math.max(1, Math.min(99, Math.round(d.score + shift))) }));
+  const proTracks = [
+    { label: "Technical foundation", key: "analytical" },
+    { label: "Business understanding", key: "business" },
+    { label: "Analytical ability", key: "analytical" },
+    { label: "Communication", key: "communication" },
+    { label: "Leadership presence", keys: ["confidence", "social"] },
+    { label: "Industry awareness", key: "knowledge" },
+  ];
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionHeading title="Me" sub="Who I was. Who I am. Who I'm working toward." />
+      <Card style={{ paddingTop: 24 }}><AvatarGlyph pct={devIndex} dims={dims} size={240} /></Card>
+      <Card>
+        <span className="text-sm font-medium">Version of me</span>
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          {[{ label: "90 days ago", pct: beforeIndex, d: dimsBefore }, { label: "Today", pct: devIndex, d: dims }, { label: "Target", pct: profile.targetIndex, d: dimsTarget }].map((v) => (
+            <div key={v.label} className="text-center">
+              <AvatarGlyph pct={v.pct} dims={v.d} size={110} />
+              <div className="text-xs mt-1" style={{ color: C.textSecondary }}>{v.label}</div>
+              <div className="text-sm" style={{ fontFamily: MONO, color: C.signal }}>{v.pct.toFixed(1)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-2 mt-4">
+          <span className="text-xs" style={{ color: C.textSecondary }}>Target index</span>
+          <input type="number" min={Math.round(devIndex)} max={99} value={profile.targetIndex}
+            onChange={(e) => setTargetIndex(Math.max(1, Math.min(99, Number(e.target.value) || 0)))}
+            className="w-16 text-sm text-center rounded-lg py-1" style={{ background: C.bgSoft, border: `1px solid ${C.hairline}`, color: C.textPrimary, fontFamily: MONO }} />
+        </div>
+      </Card>
+      <Card>
+        <SectionHeading title="Professional evolution" sub="From a technical foundation toward a well-rounded business professional." />
+        {proTracks.map((t) => {
+          const currentScore = t.keys ? Math.round(t.keys.reduce((s, k) => s + (dims.find((d) => d.key === k)?.score || 50), 0) / t.keys.length) : dims.find((d) => d.key === t.key)?.score || 50;
+          const beforeScore = t.keys ? Math.round(t.keys.reduce((s, k) => s + (dimsBefore.find((d) => d.key === k)?.score || 50), 0) / t.keys.length) : dimsBefore.find((d) => d.key === t.key)?.score || 50;
+          const targetScore = Math.min(98, currentScore + 15);
+          return <EvolutionTrack key={t.label} label={t.label} before={beforeScore} current={currentScore} target={targetScore} />;
+        })}
+        <div className="flex gap-4 mt-1 text-xs" style={{ color: C.textTertiary }}>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: C.textTertiary }} />Before</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: C.signal }} />Current</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ border: `1.5px solid ${C.violet}` }} />Target</span>
+        </div>
+      </Card>
+      <Card>
+        <span className="text-sm font-medium">Data</span>
+        <p className="text-xs mt-2" style={{ color: C.textSecondary }}>Your activity log is stored only in this browser, on this device.</p>
+        {!resetArm ? (
+          <button onClick={() => setResetArm(true)} className="text-xs mt-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-full" style={{ color: C.danger, border: `1px solid ${C.danger}` }}><Icon name="refresh" size={12} /> Reset all data</button>
+        ) : (
+          <div className="flex gap-2 mt-3">
+            <button onClick={resetAll} className="text-xs px-3 py-1.5 rounded-full" style={{ background: C.danger, color: "#1A0908" }}>Tap again to confirm</button>
+            <button onClick={() => setResetArm(false)} className="text-xs px-3 py-1.5 rounded-full" style={{ color: C.textSecondary, border: `1px solid ${C.hairline}` }}>Cancel</button>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* INSIGHTS PAGE                                                       */
+/* ---------------------------------------------------------------- */
+
+function InsightsPage({ weakest, fastestImproving, strongest, log, devIndex }) {
+  const hasData = log.length > 0;
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const startScore = DIM_DEFS.reduce((s, d) => s + scoreAsOf(d.key, monthStart.toISOString(), log), 0) / DIM_DEFS.length;
+  const activeDaysThisMonth = new Set(log.filter((e) => new Date(e.ts) >= monthStart).map((e) => e.ts.slice(0, 10))).size;
+  const growthPct = startScore > 0 ? (((devIndex - startScore) / startScore) * 100).toFixed(1) : "0.0";
+  if (!hasData) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeading title="Insights" sub="What the system is noticing about your development." />
+        <Card><p className="text-sm" style={{ color: C.textSecondary }}>Once you've logged a few activities, patterns, strengths, and bottlenecks will appear here — grounded in your own data.</p></Card>
+      </div>
+    );
+  }
+  const mirror = [
+    { title: "Strength", tag: "From your data", body: `${strongest.label} is your most consistent area right now.` },
+    { title: "Developing", tag: "From your data", body: `${fastestImproving.label} is improving faster than any other dimension over the last month.` },
+    { title: "Bottleneck", tag: "From your data", body: `${weakest.label} is holding back your overall index relative to everything else you're building.` },
+    { title: "Pattern", tag: "Possible pattern", body: `Based on recent activity, one possible pattern is that dimensions with structured lab exercises are moving faster than open-ended ones. This is a pattern to watch, not a conclusion.` },
+    { title: "Next move", tag: "Suggestion", body: `Focus a few sessions this week specifically on ${weakest.label.toLowerCase()} to close the gap.` },
+  ];
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionHeading title="Insights" sub="What the system is noticing about your development." />
+      {mirror.map((m) => (
+        <Card key={m.title}>
+          <div className="flex items-center justify-between mb-1"><span className="text-sm font-medium">{m.title}</span><span className="text-xs px-2 py-0.5 rounded-full" style={{ background: C.surfaceRaised, color: C.textTertiary }}>{m.tag}</span></div>
+          <p className="text-sm" style={{ color: C.textSecondary }}>{m.body}</p>
+        </Card>
+      ))}
+      <Card>
+        <span className="text-sm font-medium">This month's audit</span>
+        <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Starting score</div><div style={{ fontFamily: MONO }}>{startScore.toFixed(1)}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Current score</div><div style={{ fontFamily: MONO, color: C.signal }}>{devIndex.toFixed(1)}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Growth</div><div style={{ fontFamily: MONO, color: C.signal }}>{growthPct}%</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Active days</div><div style={{ fontFamily: MONO }}>{activeDaysThisMonth}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Biggest improvement</div><div>{fastestImproving.label}</div></div>
+          <div><div className="text-xs" style={{ color: C.textTertiary }}>Biggest gap</div><div>{weakest.label}</div></div>
+        </div>
+        <div className="flex gap-2 mt-3"><span className="text-xs px-2 py-1 rounded-full" style={{ background: C.violetDim, color: C.violet }}>Next priority: {weakest.label}</span></div>
+      </Card>
+    </div>
+  );
+}
+
+try {
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<PersonalDevelopmentOS />);
+} catch (e) {
+  showError("Render error: " + (e && e.message ? e.message : e));
+}
+</script>
+</body>
+</html>
